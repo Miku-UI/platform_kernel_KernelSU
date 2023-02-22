@@ -22,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
@@ -130,21 +131,29 @@ private fun StatusCard(kernelVersion: KernelVersion, ksuVersion: Int?) {
             else MaterialTheme.colorScheme.errorContainer
         })
     ) {
+        val uriHandler = LocalUriHandler.current
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
-                    // TODO: Install kernel
+                    if (kernelVersion.isGKI() && ksuVersion == null) {
+                        uriHandler.openUri("https://kernelsu.org/guide/installation.html")
+                    }
                 }
                 .padding(24.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             when {
                 ksuVersion != null -> {
+                    val appendText = if (Natives.isSafeMode()) {
+                        " [${stringResource(id = R.string.safe_mode)}]"
+                    } else {
+                        ""
+                    }
                     Icon(Icons.Outlined.CheckCircle, stringResource(R.string.home_working))
                     Column(Modifier.padding(start = 20.dp)) {
                         Text(
-                            text = stringResource(R.string.home_working),
+                            text = stringResource(R.string.home_working) + appendText,
                             style = MaterialTheme.typography.titleMedium
                         )
                         Spacer(Modifier.height(4.dp))
@@ -213,10 +222,7 @@ private fun InfoCard() {
             InfoCardItem(stringResource(R.string.home_kernel), uname.release)
 
             Spacer(Modifier.height(24.dp))
-            InfoCardItem(stringResource(R.string.home_arch), uname.machine)
-
-            Spacer(Modifier.height(24.dp))
-            InfoCardItem(stringResource(R.string.home_version), uname.version)
+            InfoCardItem(stringResource(R.string.home_manager_version), getManagerVersion(context))
 
             Spacer(Modifier.height(24.dp))
             InfoCardItem(stringResource(R.string.home_api), Build.VERSION.SDK_INT.toString())
@@ -245,6 +251,11 @@ private fun InfoCard() {
             )
         }
     }
+}
+
+fun getManagerVersion(context: Context) : String {
+    val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+    return "${packageInfo.versionName} (${packageInfo.versionCode})"
 }
 
 @Preview

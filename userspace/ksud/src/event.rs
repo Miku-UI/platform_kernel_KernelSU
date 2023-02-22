@@ -1,11 +1,11 @@
+use anyhow::{bail, Context, Result};
+use log::{info, warn};
 use std::{collections::HashMap, path::Path};
 
 use crate::{
     assets, defs, mount,
-    utils::{ensure_clean_dir, ensure_dir_exists},
+    utils::{self, ensure_clean_dir, ensure_dir_exists},
 };
-use anyhow::{bail, Context, Result};
-use log::{info, warn};
 
 fn mount_partition(partition: &str, lowerdir: &mut Vec<String>) -> Result<()> {
     if lowerdir.is_empty() {
@@ -18,6 +18,19 @@ fn mount_partition(partition: &str, lowerdir: &mut Vec<String>) -> Result<()> {
         warn!("partition: {partition} is a symlink");
         return Ok(());
     }
+
+    // handle stock mounts under /partition, we should restore the mount point after overlay
+    let stock_mount = mount::StockMount::new(&format!("/{partition}/"))
+        .with_context(|| format!("get stock mount of partition: {partition} failed"))?;
+    let result = stock_mount.umount();
+    if result.is_err() {
+        let remount_result = stock_mount.remount();
+        if remount_result.is_err() {
+            log::error!("remount stock mount of failed: {:?}", remount_result);
+        }
+        bail!("umount stock mount of failed: {:?}", result);
+    }
+
     // add /partition as the lowerest dir
     let lowest_dir = format!("/{partition}");
     lowerdir.push(lowest_dir.clone());
@@ -25,10 +38,20 @@ fn mount_partition(partition: &str, lowerdir: &mut Vec<String>) -> Result<()> {
     let lowerdir = lowerdir.join(":");
     info!("partition: {partition} lowerdir: {lowerdir}");
 
-    mount::mount_overlay(&lowerdir, &lowest_dir)
+    let result = mount::mount_overlay(&lowerdir, &lowest_dir);
+
+    if result.is_ok() && stock_mount.remount().is_err() {
+        // if mount overlay ok but stock remount failed, we should umount overlay
+        warn!("remount stock mount of failed, umount overlay {lowest_dir} now");
+        if mount::umount_dir(&lowest_dir).is_err() {
+            warn!("umount overlay {lowest_dir} failed");
+        }
+    }
+
+    result
 }
 
-pub fn do_systemless_mount(module_dir: &str) -> Result<()> {
+pub fn mount_systemlessly(module_dir: &str) -> Result<()> {
     // construct overlay mount params
     let dir = std::fs::read_dir(module_dir);
     let Ok(dir) = dir else {
@@ -40,7 +63,7 @@ pub fn do_systemless_mount(module_dir: &str) -> Result<()> {
     let partition = vec!["vendor", "product", "system_ext", "odm", "oem"];
     let mut partition_lowerdir: HashMap<String, Vec<String>> = HashMap::new();
     for ele in &partition {
-        partition_lowerdir.insert(ele.to_string(), Vec::new());
+        partition_lowerdir.insert((*ele).to_string(), Vec::new());
     }
 
     for entry in dir.flatten() {
@@ -55,11 +78,9 @@ pub fn do_systemless_mount(module_dir: &str) -> Result<()> {
         }
 
         let module_system = Path::new(&module).join("system");
-        if !module_system.as_path().exists() {
-            info!("module: {} has no system overlay.", module.display());
-            continue;
+        if module_system.exists() {
+            system_lowerdir.push(format!("{}", module_system.display()));
         }
-        system_lowerdir.push(format!("{}", module_system.display()));
 
         for part in &partition {
             // if /partition is a mountpoint, we would move it to $MODPATH/$partition when install
@@ -91,6 +112,9 @@ pub fn do_systemless_mount(module_dir: &str) -> Result<()> {
 
 pub fn on_post_data_fs() -> Result<()> {
     crate::ksu::report_post_fs_data();
+
+    utils::umask(0);
+
     let module_update_img = defs::MODULE_UPDATE_IMG;
     let module_img = defs::MODULE_IMG;
     let module_dir = defs::MODULE_DIR;
@@ -102,7 +126,7 @@ pub fn on_post_data_fs() -> Result<()> {
     // we should clean the module mount point if it exists
     ensure_clean_dir(module_dir)?;
 
-    assets::ensure_bin_assets().with_context(|| "Failed to extract bin assets")?;
+    assets::ensure_binaries().with_context(|| "Failed to extract bin assets")?;
 
     if Path::new(module_update_img).exists() {
         if module_update_flag.exists() {
@@ -118,54 +142,75 @@ pub fn on_post_data_fs() -> Result<()> {
         }
     }
 
+    // If there isn't any image exist, do nothing for module!
     if !Path::new(target_update_img).exists() {
-        // no image exist, do nothing for module!
         return Ok(());
     }
 
-    info!("mount {target_update_img} to {module_dir}");
-    mount::mount_ext4(target_update_img, module_dir)?;
+    // we should always mount the module.img to module dir
+    // becuase we may need to operate the module dir in safe mode
+    info!("mount module image: {target_update_img} to {module_dir}");
+    mount::AutoMountExt4::try_new(target_update_img, module_dir, false)
+        .with_context(|| "mount module image failed".to_string())?;
+
+    // check safe mode first.
+    if crate::utils::is_safe_mode() {
+        warn!("safe mode, skip post-fs-data scripts and disable all modules!");
+        if let Err(e) = crate::module::disable_all_modules() {
+            warn!("disable all modules failed: {}", e);
+        }
+        return Ok(());
+    }
+
+    // Then exec common post-fs-data scripts
+    if let Err(e) = crate::module::exec_common_scripts("post-fs-data.d", true) {
+        warn!("exec common post-fs-data scripts failed: {}", e);
+    }
 
     // load sepolicy.rule
     if crate::module::load_sepolicy_rule().is_err() {
         warn!("load sepolicy.rule failed");
     }
 
-    // mount systemless overlay
-    if let Err(e) = do_systemless_mount(module_dir) {
+    // exec modules post-fs-data scripts
+    // TODO: Add timeout
+    if let Err(e) = crate::module::exec_post_fs_data() {
+        warn!("exec post-fs-data scripts failed: {}", e);
+    }
+
+    // load system.prop
+    if let Err(e) = crate::module::load_system_prop() {
+        warn!("load system.prop failed: {}", e);
+    }
+
+    // Finally, we should do systemless mount
+    // But we should umount all stock overlayfs and remount them after module mounted
+    let stock_overlay = mount::StockOverlay::new();
+    stock_overlay.umount_all();
+
+    // mount moduke systemlessly by overlay
+    if let Err(e) = mount_systemlessly(module_dir) {
         warn!("do systemless mount failed: {}", e);
     }
 
-    // module mounted, exec modules post-fs-data scripts
-    if !crate::utils::is_safe_mode() {
-        // todo: Add timeout
-        if let Err(e) = crate::module::exec_common_scripts("post-fs-data.d", true) {
-            warn!("exec common post-fs-data scripts failed: {}", e);
-        }
-        if let Err(e) = crate::module::exec_post_fs_data() {
-            warn!("exec post-fs-data scripts failed: {}", e);
-        }
-        if let Err(e) = crate::module::load_system_prop() {
-            warn!("load system.prop failed: {}", e);
-        }
-    } else {
-        warn!("safe mode, skip module post-fs-data scripts");
-    }
+    stock_overlay.mount_all();
 
     Ok(())
 }
 
 pub fn on_services() -> Result<()> {
-    // exec modules service.sh scripts
-    if !crate::utils::is_safe_mode() {
-        if let Err(e) = crate::module::exec_common_scripts("service.d", false) {
-            warn!("exec common service scripts failed: {}", e);
-        }
-        if let Err(e) = crate::module::exec_services() {
-            warn!("exec service scripts failed: {}", e);
-        }
-    } else {
+    utils::umask(0);
+
+    // check safe mode first.
+    if crate::utils::is_safe_mode() {
         warn!("safe mode, skip module service scripts");
+        return Ok(());
+    }
+    if let Err(e) = crate::module::exec_common_scripts("service.d", false) {
+        warn!("Failed to exec common service scripts: {}", e);
+    }
+    if let Err(e) = crate::module::exec_services() {
+        warn!("Failed to exec service scripts: {}", e);
     }
 
     Ok(())
@@ -190,6 +235,6 @@ pub fn install() -> Result<()> {
     ensure_dir_exists(defs::ADB_DIR)?;
     std::fs::copy("/proc/self/exe", defs::DAEMON_PATH)?;
 
-    // install binary assets also!
-    assets::ensure_bin_assets().with_context(|| "Failed to extract assets")
+    // install binary assets
+    assets::ensure_binaries().with_context(|| "Failed to extract assets")
 }

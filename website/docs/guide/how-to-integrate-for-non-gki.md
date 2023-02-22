@@ -37,7 +37,7 @@ But if you encounter a boot loop when integrated KernelSU, it is maybe *kprobe i
 
 :::tip How to check if kprobe is broken？
 
-comment out `ksu_enable_sucompat()` and `ksu_enable_ksud()` in `KernelSU/kernel/ksu.c`, the the device boot normally, then kprobe may be broken.
+comment out `ksu_enable_sucompat()` and `ksu_enable_ksud()` in `KernelSU/kernel/ksu.c`, if the device boots normally, then kprobe may be broken.
 :::
 
 ## Manully modify the kernel source
@@ -141,5 +141,86 @@ You should found the four functions in kernel source:
 2. do_execveat_common, usually in `fs/exec.c`
 3. vfs_read, usually in `fs/read_write.c`
 4. vfs_statx, usually in `fs/stat.c`
+
+If your kernel does not have the `vfs_statx`, use `vfs_fstatat` instead:
+
+```diff
+diff --git a/fs/stat.c b/fs/stat.c
+index 068fdbcc9e26..5348b7bb9db2 100644
+--- a/fs/stat.c
++++ b/fs/stat.c
+@@ -87,6 +87,8 @@ int vfs_fstat(unsigned int fd, struct kstat *stat)
+ }
+ EXPORT_SYMBOL(vfs_fstat);
+ 
++extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
++
+ int vfs_fstatat(int dfd, const char __user *filename, struct kstat *stat,
+ 		int flag)
+ {
+@@ -94,6 +96,8 @@ int vfs_fstatat(int dfd, const char __user *filename, struct kstat *stat,
+ 	int error = -EINVAL;
+ 	unsigned int lookup_flags = 0;
+ 
++	ksu_handle_stat(&dfd, &filename, &flag);
++
+ 	if ((flag & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
+ 		      AT_EMPTY_PATH)) != 0)
+ 		goto out;
+```
+
+For kernels eariler than 4.17, if you cannot find `do_faccessat`, just go to the definition of the `faccessat` syscall and place the call there:
+
+```diff
+diff --git a/fs/open.c b/fs/open.c
+index 2ff887661237..e758d7db7663 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -355,6 +355,9 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
+ 	return error;
+ }
+ 
++extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
++			        int *flags);
++
+ /*
+  * access() needs to use the real uid/gid, not the effective uid/gid.
+  * We do this by temporarily clearing all FS-related capabilities and
+@@ -370,6 +373,8 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+ 	int res;
+ 	unsigned int lookup_flags = LOOKUP_FOLLOW;
+ 
++	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
++
+ 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
+ 		return -EINVAL;
+```
+
+To enable KernelSU's builtin SafeMode, You should also modify `input_handle_event` in `drivers/input/input.c`:
+
+:::tip
+It is strongly recommended to enable this feature, it is very helpful for recusing from bootloop!
+:::
+
+```diff
+diff --git a/drivers/input/input.c b/drivers/input/input.c
+index 45306f9ef247..815091ebfca4 100755
+--- a/drivers/input/input.c
++++ b/drivers/input/input.c
+@@ -367,10 +367,13 @@ static int input_get_disposition(struct input_dev *dev,
+        return disposition;
+ }
+
++extern int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);
++
+ static void input_handle_event(struct input_dev *dev,
+                               unsigned int type, unsigned int code, int value)
+ {
+        int disposition = input_get_disposition(dev, type, code, &value);
++       ksu_handle_input_handle_event(&type, &code, &value);
+
+        if (disposition != INPUT_IGNORE_EVENT && type != EV_SYN)
+                add_input_randomness(type, code, value);
+```
 
 Finally, build your kernel again, KernelSU should works well.

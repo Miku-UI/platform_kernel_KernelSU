@@ -30,11 +30,11 @@ import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import kotlinx.coroutines.launch
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.R
+import me.weishu.kernelsu.ui.component.ConfirmDialog
+import me.weishu.kernelsu.ui.component.DialogResult
+import me.weishu.kernelsu.ui.component.rememberDialogHostState
 import me.weishu.kernelsu.ui.screen.destinations.InstallScreenDestination
-import me.weishu.kernelsu.ui.util.LocalSnackbarHost
-import me.weishu.kernelsu.ui.util.overlayFsAvailable
-import me.weishu.kernelsu.ui.util.toggleModule
-import me.weishu.kernelsu.ui.util.uninstallModule
+import me.weishu.kernelsu.ui.util.*
 import me.weishu.kernelsu.ui.viewmodel.ModuleViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,11 +52,14 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopBar()
-        },
-        floatingActionButton = {
+    val isSafeMode = Natives.isSafeMode()
+
+    Scaffold(topBar = {
+        TopBar()
+    }, floatingActionButton = if (isSafeMode) {
+        { /* Empty */ }
+    } else {
+        {
             val moduleInstall = stringResource(id = R.string.module_install)
             val selectZipLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.StartActivityForResult()
@@ -83,7 +86,11 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
                 text = { Text(text = moduleInstall) },
             )
         }
-    ) { innerPadding ->
+    }) { innerPadding ->
+
+        val dialogState = rememberDialogHostState()
+        ConfirmDialog(dialogState)
+
         val failedEnable = stringResource(R.string.module_failed_to_enable)
         val failedDisable = stringResource(R.string.module_failed_to_disable)
         val failedUninstall = stringResource(R.string.module_uninstall_failed)
@@ -97,11 +104,9 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
             return@Scaffold
         }
         SwipeRefresh(
-            state = swipeState,
-            onRefresh = {
+            state = swipeState, onRefresh = {
                 scope.launch { viewModel.fetchModuleList() }
-            },
-            modifier = Modifier
+            }, modifier = Modifier
                 .padding(innerPadding)
                 .padding(16.dp)
                 .fillMaxSize()
@@ -121,42 +126,69 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
                     Text(stringResource(R.string.module_empty))
                 }
             } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(15.dp),
-                    contentPadding = remember { PaddingValues(bottom = 16.dp + 56.dp /* Scaffold Fab Spacing + Fab container height */ ) }
-                ) {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(15.dp),
+                    contentPadding = remember { PaddingValues(bottom = 16.dp + 56.dp /* Scaffold Fab Spacing + Fab container height */) }) {
                     items(viewModel.moduleList) { module ->
                         var isChecked by rememberSaveable(module) { mutableStateOf(module.enabled) }
-                        ModuleItem(module,
-                            isChecked,
-                            onUninstall = {
-                                scope.launch {
-                                    val result = uninstallModule(module.id)
-                                    if (result) {
-                                        viewModel.fetchModuleList()
-                                    }
-                                    snackBarHost.showSnackbar(
-                                        if (result) {
-                                            successUninstall.format(module.name)
-                                        } else {
-                                            failedUninstall.format(module.name)
-                                        }
-                                    )
+                        val reboot = stringResource(id = R.string.reboot)
+                        val rebootToApply = stringResource(id = R.string.reboot_to_apply)
+                        val moduleStr = stringResource(id = R.string.module)
+                        val uninstall = stringResource(id = R.string.uninstall)
+                        val cancel = stringResource(id = android.R.string.cancel)
+                        val moduleUninstallConfirm =
+                            stringResource(id = R.string.module_uninstall_confirm)
+                        ModuleItem(module, isChecked, onUninstall = {
+                            scope.launch {
+                                val dialogResult = dialogState.showDialog(
+                                    moduleStr,
+                                    content = moduleUninstallConfirm.format(module.name),
+                                    confirm = uninstall,
+                                    dismiss = cancel
+                                )
+                                if (dialogResult != DialogResult.Confirmed) {
+                                    return@launch
                                 }
-                            },
-                            onCheckChanged = {
-                                val success = toggleModule(module.id, !isChecked)
+
+                                val success = uninstallModule(module.id)
                                 if (success) {
-                                    isChecked = it
-                                    scope.launch {
-                                        viewModel.fetchModuleList()
-                                    }
-                                } else scope.launch {
-                                    val message = if (isChecked) failedDisable else failedEnable
-                                    snackBarHost.showSnackbar(message.format(module.name))
+                                    viewModel.fetchModuleList()
+                                }
+                                val message = if (success) {
+                                    successUninstall.format(module.name)
+                                } else {
+                                    failedUninstall.format(module.name)
+                                }
+                                val actionLabel = if (success) {
+                                    reboot
+                                } else {
+                                    null
+                                }
+                                val result = snackBarHost.showSnackbar(
+                                    message, actionLabel = actionLabel
+                                )
+                                if (result == SnackbarResult.ActionPerformed) {
+                                    reboot()
                                 }
                             }
-                        )
+                        }, onCheckChanged = {
+                            val success = toggleModule(module.id, !isChecked)
+                            if (success) {
+                                isChecked = it
+                                scope.launch {
+                                    viewModel.fetchModuleList()
+
+                                    val result = snackBarHost.showSnackbar(
+                                        rebootToApply, actionLabel = reboot
+                                    )
+                                    if (result == SnackbarResult.ActionPerformed) {
+                                        reboot()
+                                    }
+                                }
+                            } else scope.launch {
+                                val message = if (isChecked) failedDisable else failedEnable
+                                snackBarHost.showSnackbar(message.format(module.name))
+                            }
+                        })
                         // fix last item shadow incomplete in LazyColumn
                         Spacer(Modifier.height(1.dp))
                     }
@@ -169,9 +201,7 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TopBar() {
-    TopAppBar(
-        title = { Text(stringResource(R.string.module)) }
-    )
+    TopAppBar(title = { Text(stringResource(R.string.module)) })
 }
 
 @Composable

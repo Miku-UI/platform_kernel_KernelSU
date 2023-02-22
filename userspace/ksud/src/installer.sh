@@ -1,8 +1,11 @@
 #!/system/bin/sh
 ############################################
 # KernelSU installer script
-# Credit to Magisk!!!
+# mostly from module_installer.sh
+# and util_functions.sh in Magisk
 ############################################
+
+umask 022
 
 ui_print() {
   if $BOOTMODE; then
@@ -66,6 +69,11 @@ print_title() {
   ui_print " $1 "
   [ "$2" ] && ui_print " $2 "
   ui_print "$bar"
+}
+
+check_sepolicy() {
+    /data/adb/ksud sepolicy check "$1"
+    return $?
 }
 
 ######################
@@ -267,10 +275,6 @@ request_size_check() {
   reqSizeM=`du -ms "$1" | cut -f1`
 }
 
-unzip() {
-    /system/bin/unzip -q "$@"
-}
-
 request_zip_size_check() {
   reqSizeM=`unzip -l "$1" | tail -n 1 | awk '{ print int(($1 - 1) / 1048576 + 1) }'`
 }
@@ -416,8 +420,5 @@ NVBASE=/data/adb/ksu
 TMPDIR=/dev/tmp
 
 # Some modules dependents on this
-MAGISK_VER=25.2
-MAGISK_VER_CODE=25200
-
-# KSU to recognize 
-KSU=true
+export MAGISK_VER=25.2
+export MAGISK_VER_CODE=25200
