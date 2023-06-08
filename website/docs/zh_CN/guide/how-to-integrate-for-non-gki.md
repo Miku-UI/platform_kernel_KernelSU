@@ -1,4 +1,4 @@
-# 如何为非 GKI 内核集成 KernelSU
+# 如何为非 GKI 内核集成 KernelSU {#introduction}
 
 KernelSU 可以被集成到非 GKI 内核中，现在它最低支持到内核 4.14 版本；理论上也可以支持更低的版本。
 
@@ -11,14 +11,28 @@ KernelSU 可以被集成到非 GKI 内核中，现在它最低支持到内核 4.
 1. 借助 `kprobe` 自动集成
 2. 手动修改内核源码
 
-## 使用 kprobe 集成
+## 使用 kprobe 集成 {#using-kprobes}
 
 KernelSU 使用 kprobe 机制来做内核的相关 hook，如果 *kprobe* 可以在你编译的内核中正常运行，那么推荐用这个方法来集成。
 
 首先，把 KernelSU 添加到你的内核源码树，在内核的根目录执行以下命令：
 
+- 最新tag(稳定版本)
+
 ```sh
 curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+```
+
+- main分支(开发版本)
+
+```sh
+curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+```
+
+- 指定tag(比如v0.5.2)
+
+```sh
+curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.5.2
 ```
 
 然后，你需要检查你的内核是否开启了 *kprobe* 相关的配置，如果没有开启，需要添加以下配置：
@@ -40,7 +54,7 @@ CONFIG_KPROBE_EVENTS=y
 注释掉 `KernelSU/kernel/ksu.c` 中 `ksu_enable_sucompat()` 和 `ksu_enable_ksud()`，如果正常开机，那么就是 kprobe 的问题；或者你可以手动尝试使用 kprobe 功能，如果不正常，手机会直接重启。
 :::
 
-## 手动修改内核源码
+## 手动修改内核源码 {#modify-kernel-source-code}
 
 如果 kprobe 工作不正常（通常是上游的 bug 或者内核版本过低），那你可以尝试这种方法：
 

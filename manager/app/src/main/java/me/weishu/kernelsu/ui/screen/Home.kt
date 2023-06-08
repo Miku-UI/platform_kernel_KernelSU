@@ -1,7 +1,5 @@
 package me.weishu.kernelsu.ui.screen
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.os.PowerManager
@@ -30,16 +28,11 @@ import androidx.compose.ui.unit.dp
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootNavGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
-import kotlinx.coroutines.launch
 import me.weishu.kernelsu.*
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.screen.destinations.SettingScreenDestination
-import me.weishu.kernelsu.ui.util.LocalSnackbarHost
-import me.weishu.kernelsu.ui.util.reboot
-import me.weishu.kernelsu.ui.util.getSELinuxStatus
-import me.weishu.kernelsu.ui.util.install
+import me.weishu.kernelsu.ui.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @RootNavGraph(start = true)
 @Destination
 @Composable
@@ -63,10 +56,20 @@ fun HomeScreen(navigator: DestinationsNavigator) {
             SideEffect {
                 if (isManager) install()
             }
-            val ksuVersion = if (isManager) Natives.getVersion() else null
+            val ksuVersion = if (isManager) Natives.version else null
 
             StatusCard(kernelVersion, ksuVersion)
+            if (isManager && Natives.requireNewKernel()) {
+                WarningCard(
+                    stringResource(id = R.string.require_kernel_version).format(
+                        ksuVersion,
+                        Natives.MINIMAL_SUPPORTED_KERNEL
+                    )
+                )
+            }
             InfoCard()
+            DonateCard()
+            LearnMoreCard()
             Spacer(Modifier)
         }
     }
@@ -102,7 +105,8 @@ private fun TopBar(onSettingsClick: () -> Unit) {
 
                     RebootDropdownItem(id = R.string.reboot)
 
-                    val pm = LocalContext.current.getSystemService(Context.POWER_SERVICE) as PowerManager?
+                    val pm =
+                        LocalContext.current.getSystemService(Context.POWER_SERVICE) as PowerManager?
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && pm?.isRebootingUserspaceSupported == true) {
                         RebootDropdownItem(id = R.string.reboot_userspace, reason = "userspace")
                     }
@@ -145,7 +149,7 @@ private fun StatusCard(kernelVersion: KernelVersion, ksuVersion: Int?) {
         ) {
             when {
                 ksuVersion != null -> {
-                    val appendText = if (Natives.isSafeMode()) {
+                    val appendText = if (Natives.isSafeMode) {
                         " [${stringResource(id = R.string.safe_mode)}]"
                     } else {
                         ""
@@ -161,8 +165,22 @@ private fun StatusCard(kernelVersion: KernelVersion, ksuVersion: Int?) {
                             text = stringResource(R.string.home_working_version, ksuVersion),
                             style = MaterialTheme.typography.bodyMedium
                         )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.home_superuser_count,
+                                getSuperuserCount()
+                            ),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.home_module_count, getModuleCount()),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 }
+
                 kernelVersion.isGKI() -> {
                     Icon(Icons.Outlined.Warning, stringResource(R.string.home_not_installed))
                     Column(Modifier.padding(start = 20.dp)) {
@@ -177,6 +195,7 @@ private fun StatusCard(kernelVersion: KernelVersion, ksuVersion: Int?) {
                         )
                     }
                 }
+
                 else -> {
                     Icon(Icons.Outlined.Block, stringResource(R.string.home_unsupported))
                     Column(Modifier.padding(start = 20.dp)) {
@@ -198,10 +217,92 @@ private fun StatusCard(kernelVersion: KernelVersion, ksuVersion: Int?) {
 }
 
 @Composable
+fun WarningCard(message: String) {
+    ElevatedCard(
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.error
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column() {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun LearnMoreCard() {
+    val uriHandler = LocalUriHandler.current
+    val url = stringResource(R.string.home_learn_kernelsu_url)
+
+    ElevatedCard {
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    uriHandler.openUri(url)
+                }
+                .padding(24.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column() {
+                Text(
+                    text = stringResource(R.string.home_learn_kernelsu),
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.home_click_to_learn_kernelsu),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DonateCard() {
+    val uriHandler = LocalUriHandler.current
+
+    ElevatedCard {
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    uriHandler.openUri("https://patreon.com/weishu")
+                }
+                .padding(24.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column() {
+                Text(
+                    text = stringResource(R.string.home_support_title),
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.home_support_content),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun InfoCard() {
     val context = LocalContext.current
-    val snackbarHost = LocalSnackbarHost.current
-    val scope = rememberCoroutineScope()
 
     ElevatedCard {
         Column(
@@ -221,39 +322,19 @@ private fun InfoCard() {
 
             InfoCardItem(stringResource(R.string.home_kernel), uname.release)
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
             InfoCardItem(stringResource(R.string.home_manager_version), getManagerVersion(context))
 
-            Spacer(Modifier.height(24.dp))
-            InfoCardItem(stringResource(R.string.home_api), Build.VERSION.SDK_INT.toString())
-
-            Spacer(Modifier.height(24.dp))
-            InfoCardItem(stringResource(R.string.home_abi), Build.SUPPORTED_ABIS.joinToString(", "))
-
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
             InfoCardItem(stringResource(R.string.home_fingerprint), Build.FINGERPRINT)
 
-            Spacer(Modifier.height(24.dp))
-            InfoCardItem(stringResource(R.string.home_securitypatch), Build.VERSION.SECURITY_PATCH)
-
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
             InfoCardItem(stringResource(R.string.home_selinux_status), getSELinuxStatus())
-
-            val copiedMessage = stringResource(R.string.home_copied_to_clipboard)
-            TextButton(
-                modifier = Modifier.align(Alignment.End),
-                onClick = {
-                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("KernelSU", contents.toString()))
-                    scope.launch { snackbarHost.showSnackbar(copiedMessage) }
-                },
-                content = { Text(stringResource(android.R.string.copy)) }
-            )
         }
     }
 }
 
-fun getManagerVersion(context: Context) : String {
+fun getManagerVersion(context: Context): String {
     val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
     return "${packageInfo.versionName} (${packageInfo.versionCode})"
 }

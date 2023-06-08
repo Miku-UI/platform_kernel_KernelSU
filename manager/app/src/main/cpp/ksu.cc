@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #include "ksu.h"
 
@@ -17,9 +18,15 @@
 #define CMD_GET_VERSION 2
 #define CMD_ALLOW_SU 3
 #define CMD_DENY_SU 4
-#define CMD_GET_ALLOW_LIST 5
+#define CMD_GET_SU_LIST 5
 #define CMD_GET_DENY_LIST 6
 #define CMD_CHECK_SAFEMODE 9
+
+#define CMD_GET_APP_PROFILE 10
+#define CMD_SET_APP_PROFILE 11
+
+#define CMD_IS_UID_GRANTED_ROOT 12
+#define CMD_IS_UID_SHOULD_UMOUNT 13
 
 static bool ksuctl(int cmd, void* arg1, void* arg2) {
     int32_t result = 0;
@@ -29,7 +36,14 @@ static bool ksuctl(int cmd, void* arg1, void* arg2) {
 
 bool become_manager(const char* pkg) {
     char param[128];
-    sprintf(param, "/data/data/%s", pkg);
+    uid_t uid = getuid();
+    uint32_t userId = uid / 100000;
+    if (userId == 0) {
+        sprintf(param, "/data/data/%s", pkg);
+    } else {
+        snprintf(param, sizeof(param), "/data/user/%d/%s", userId, pkg);
+    }
+
     return ksuctl(CMD_BECOME_MANAGER, param, nullptr);
 }
 
@@ -41,19 +55,23 @@ int get_version() {
     return version;
 }
 
-bool allow_su(int uid, bool allow) {
-    int cmd = allow ? CMD_ALLOW_SU : CMD_DENY_SU;
-    return ksuctl(cmd, (void*) uid, nullptr);
-}
-
 bool get_allow_list(int *uids, int *size) {
-    return ksuctl(CMD_GET_ALLOW_LIST, uids, size);
-}
-
-bool get_deny_list(int *uids, int *size) {
-    return ksuctl(CMD_GET_DENY_LIST, uids, size);
+    return ksuctl(CMD_GET_SU_LIST, uids, size);
 }
 
 bool is_safe_mode() {
     return ksuctl(CMD_CHECK_SAFEMODE, nullptr, nullptr);
+}
+
+bool uid_should_umount(int uid) {
+    bool should;
+    return ksuctl(CMD_IS_UID_SHOULD_UMOUNT, reinterpret_cast<void*>(uid), &should) && should;
+}
+
+bool set_app_profile(const app_profile *profile) {
+    return ksuctl(CMD_SET_APP_PROFILE, (void*) profile, nullptr);
+}
+
+bool get_app_profile(p_key_t key, app_profile *profile) {
+    return ksuctl(CMD_GET_APP_PROFILE, (void*) profile, nullptr);
 }

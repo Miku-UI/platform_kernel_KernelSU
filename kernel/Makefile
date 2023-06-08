@@ -14,7 +14,7 @@ obj-y += kernel_compat.o
 obj-y += selinux/
 
 # Hardcode it each time we merged new tag to avoid conflicts.
-KSU_GIT_VERSION := 472
+KSU_GIT_VERSION := 781
 ccflags-y += -DKSU_GIT_VERSION=$(KSU_GIT_VERSION)
 
 ifndef EXPECTED_SIZE
@@ -28,4 +28,4 @@ endif
 ccflags-y += -DEXPECTED_SIZE=$(EXPECTED_SIZE)
 ccflags-y += -DEXPECTED_HASH=$(EXPECTED_HASH)
 ccflags-y += -Wno-implicit-function-declaration -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat
-ccflags-y += -Wno-macro-redefined -Wno-declaration-after-statement
+ccflags-y += -Wno-declaration-after-statement

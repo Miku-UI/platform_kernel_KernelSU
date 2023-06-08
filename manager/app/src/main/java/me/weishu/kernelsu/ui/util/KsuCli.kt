@@ -7,7 +7,10 @@ import com.topjohnwu.superuser.CallbackList
 import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.ShellUtils
 import me.weishu.kernelsu.BuildConfig
+import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.ksuApp
+import me.weishu.kernelsu.ui.viewmodel.ModuleViewModel
+import org.json.JSONArray
 import java.io.File
 
 
@@ -19,6 +22,14 @@ private const val TAG = "KsuCli"
 
 private fun getKsuDaemonPath(): String {
     return ksuApp.applicationInfo.nativeLibraryDir + File.separator + "libksud.so"
+}
+
+object KsuCli {
+    val SHELL: Shell = createRootShell()
+}
+
+fun getRootShell(): Shell {
+    return KsuCli.SHELL
 }
 
 fun createRootShell(): Shell {
@@ -33,7 +44,7 @@ fun createRootShell(): Shell {
 }
 
 fun execKsud(args: String): Boolean {
-    val shell = createRootShell()
+    val shell = getRootShell()
     return ShellUtils.fastCmdResult(shell, "${getKsuDaemonPath()} $args")
 }
 
@@ -44,10 +55,23 @@ fun install() {
 }
 
 fun listModules(): String {
-    val shell = createRootShell()
+    val shell = getRootShell()
 
-    val out = shell.newJob().add("${getKsuDaemonPath()} module list").to(ArrayList(), null).exec().out
+    val out =
+        shell.newJob().add("${getKsuDaemonPath()} module list").to(ArrayList(), null).exec().out
     return out.joinToString("\n").ifBlank { "[]" }
+}
+
+fun getModuleCount(): Int {
+    val result = listModules()
+    runCatching {
+        val array = JSONArray(result)
+        return array.length()
+    }.getOrElse { return 0 }
+}
+
+fun getSuperuserCount(): Int {
+    return Natives.allowList.size
 }
 
 fun toggleModule(id: String, enable: Boolean): Boolean {
@@ -61,14 +85,14 @@ fun toggleModule(id: String, enable: Boolean): Boolean {
     return result
 }
 
-fun uninstallModule(id: String) : Boolean {
+fun uninstallModule(id: String): Boolean {
     val cmd = "module uninstall $id"
     val result = execKsud(cmd)
     Log.i(TAG, "uninstall module $id result: $result")
     return result
 }
 
-fun installModule(uri: Uri, onFinish: (Boolean)->Unit, onOutput: (String) -> Unit) : Boolean {
+fun installModule(uri: Uri, onFinish: (Boolean) -> Unit, onOutput: (String) -> Unit): Boolean {
     val resolver = ksuApp.contentResolver
     with(resolver.openInputStream(uri)) {
         val file = File(ksuApp.cacheDir, "module.zip")
@@ -77,7 +101,7 @@ fun installModule(uri: Uri, onFinish: (Boolean)->Unit, onOutput: (String) -> Uni
         }
         val cmd = "module install ${file.absolutePath}"
 
-        val shell = createRootShell()
+        val shell = getRootShell()
 
         val callbackList: CallbackList<String?> = object : CallbackList<String?>() {
             override fun onAddElement(s: String?) {
@@ -85,7 +109,8 @@ fun installModule(uri: Uri, onFinish: (Boolean)->Unit, onOutput: (String) -> Uni
             }
         }
 
-        val result = shell.newJob().add("${getKsuDaemonPath()} $cmd").to(callbackList, callbackList).exec()
+        val result =
+            shell.newJob().add("${getKsuDaemonPath()} $cmd").to(callbackList, callbackList).exec()
         Log.i("KernelSU", "install module $uri result: $result")
 
         file.delete()
@@ -96,7 +121,7 @@ fun installModule(uri: Uri, onFinish: (Boolean)->Unit, onOutput: (String) -> Uni
 }
 
 fun reboot(reason: String = "") {
-    val shell = createRootShell()
+    val shell = getRootShell()
     if (reason == "recovery") {
         // KEYCODE_POWER = 26, hide incorrect "Factory data reset" message
         ShellUtils.fastCmd(shell, "/system/bin/input keyevent 26")
@@ -105,13 +130,13 @@ fun reboot(reason: String = "") {
 }
 
 fun overlayFsAvailable(): Boolean {
-    val shell = createRootShell()
+    val shell = getRootShell()
     // check /proc/filesystems
     return ShellUtils.fastCmdResult(shell, "cat /proc/filesystems | grep overlay")
 }
 
 fun hasMagisk(): Boolean {
-    val shell = createRootShell()
+    val shell = getRootShell()
     val result = shell.newJob().add("nsenter --mount=/proc/1/ns/mnt which magisk").exec()
     Log.i(TAG, "has magisk: ${result.isSuccess}")
     return result.isSuccess

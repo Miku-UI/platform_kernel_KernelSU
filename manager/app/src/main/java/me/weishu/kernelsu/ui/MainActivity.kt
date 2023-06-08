@@ -5,28 +5,37 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import com.google.accompanist.navigation.animation.rememberAnimatedNavController
 import com.ramcosta.composedestinations.DestinationsNavHost
+import com.ramcosta.composedestinations.navigation.popBackStack
+import com.ramcosta.composedestinations.utils.isRouteOnBackStackAsState
+import me.weishu.kernelsu.Natives
+import me.weishu.kernelsu.ksuApp
+import me.weishu.kernelsu.ui.component.rememberDialogHostState
 import me.weishu.kernelsu.ui.screen.BottomBarDestination
 import me.weishu.kernelsu.ui.screen.NavGraphs
-import me.weishu.kernelsu.ui.screen.appCurrentDestinationAsState
-import me.weishu.kernelsu.ui.screen.destinations.Destination
-import me.weishu.kernelsu.ui.screen.startAppDestination
 import me.weishu.kernelsu.ui.theme.KernelSUTheme
+import me.weishu.kernelsu.ui.util.LocalDialogHost
 import me.weishu.kernelsu.ui.util.LocalSnackbarHost
 
 class MainActivity : ComponentActivity() {
 
-    @OptIn(ExperimentalAnimationApi::class, ExperimentalMaterial3Api::class)
+    @OptIn(ExperimentalAnimationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -38,7 +47,10 @@ class MainActivity : ComponentActivity() {
                     bottomBar = { BottomBar(navController) },
                     snackbarHost = { SnackbarHost(snackbarHostState) }
                 ) { innerPadding ->
-                    CompositionLocalProvider(LocalSnackbarHost provides snackbarHostState) {
+                    CompositionLocalProvider(
+                        LocalSnackbarHost provides snackbarHostState,
+                        LocalDialogHost provides rememberDialogHostState(),
+                    ) {
                         DestinationsNavHost(
                             modifier = Modifier.padding(innerPadding),
                             navGraph = NavGraphs.root,
@@ -53,31 +65,29 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun BottomBar(navController: NavHostController) {
-    val topDestination: Destination = navController.appCurrentDestinationAsState().value
-        ?: NavGraphs.root.startAppDestination
-    val bottomBarRoutes = remember {
-        BottomBarDestination.values().map { it.direction.route }
-    }
-
+    val isManager = Natives.becomeManager(ksuApp.packageName)
+    val fullFeatured = isManager && !Natives.requireNewKernel()
     NavigationBar(tonalElevation = 8.dp) {
         BottomBarDestination.values().forEach { destination ->
+            if (!fullFeatured && destination.rootRequired) return@forEach
+            val isCurrentDestOnBackStack by navController.isRouteOnBackStackAsState(destination.direction)
             NavigationBarItem(
-                selected = topDestination.route == destination.direction.route,
+                selected = isCurrentDestOnBackStack,
                 onClick = {
-                    val firstRoute = navController.backQueue.reversed().first {
-                        it.destination.route in bottomBarRoutes
-                    }.destination.route
+                    if (isCurrentDestOnBackStack) {
+                        navController.popBackStack(destination.direction, false)
+                    }
 
                     navController.navigate(destination.direction.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = firstRoute != destination.direction.route
+                        popUpTo(NavGraphs.root.route) {
+                            saveState = true
                         }
                         launchSingleTop = true
                         restoreState = true
                     }
                 },
                 icon = {
-                    if (topDestination.route == destination.direction.route) {
+                    if (isCurrentDestOnBackStack) {
                         Icon(destination.iconSelected, stringResource(destination.label))
                     } else {
                         Icon(destination.iconNotSelected, stringResource(destination.label))

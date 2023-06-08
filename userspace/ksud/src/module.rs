@@ -14,8 +14,8 @@ use log::{info, warn};
 use std::{
     collections::HashMap,
     env::var as env_var,
-    fs::{remove_dir_all, set_permissions, File, OpenOptions, Permissions},
-    io::{Cursor, Write},
+    fs::{remove_dir_all, set_permissions, File, Permissions},
+    io::Cursor,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     str::FromStr,
@@ -154,32 +154,6 @@ fn grow_image_size(img: &str, extra_size: u64) -> Result<()> {
     Ok(())
 }
 
-fn switch_cgroup(grp: &str, pid: u32) {
-    let path = Path::new(grp).join("cgroup.procs");
-    if !path.exists() {
-        return;
-    }
-
-    let fp = OpenOptions::new().append(true).open(path);
-    if let Ok(mut fp) = fp {
-        let _ = writeln!(fp, "{pid}");
-    }
-}
-
-fn switch_cgroups() {
-    let pid = std::process::id();
-    switch_cgroup("/acct", pid);
-    switch_cgroup("/dev/cg2_bpf", pid);
-    switch_cgroup("/sys/fs/cgroup", pid);
-
-    if getprop("ro.config.per_app_memcg")
-        .filter(|prop| prop == "false")
-        .is_none()
-    {
-        switch_cgroup("/dev/memcg/apps", pid);
-    }
-}
-
 pub fn load_sepolicy_rule() -> Result<()> {
     let modules_dir = Path::new(defs::MODULE_DIR);
     let dir = std::fs::read_dir(modules_dir)?;
@@ -270,7 +244,7 @@ pub fn exec_post_fs_data() -> Result<()> {
 }
 
 pub fn exec_common_scripts(dir: &str, wait: bool) -> Result<()> {
-    let script_dir = Path::new(defs::WORKING_DIR).join(dir);
+    let script_dir = Path::new(defs::ADB_DIR).join(dir);
     if !script_dir.exists() {
         info!("{} not exists, skip", script_dir.display());
         return Ok(());
@@ -359,6 +333,7 @@ fn _install_module(zip: &str) -> Result<()> {
     let mut buffer: Vec<u8> = Vec::new();
     let entry_path = PathBuf::from_str("module.prop")?;
     let zip_path = PathBuf::from_str(zip)?;
+    let zip_path = zip_path.canonicalize()?;
     zip_extract_file_to_memory(&zip_path, &entry_path, &mut buffer)?;
 
     let mut module_prop = HashMap::new();
@@ -581,6 +556,10 @@ pub fn uninstall_module(id: &str) -> Result<()> {
                     }
                 })?;
             if module_id.eq(mid) {
+                let uninstall_script = path.join("uninstall.sh");
+                if uninstall_script.exists() {
+                    exec_script(uninstall_script, true)?;
+                }
                 remove_dir_all(path)?;
                 break;
             }

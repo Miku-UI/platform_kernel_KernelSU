@@ -72,6 +72,8 @@ enum Debug {
     /// Get kernel version
     Version,
 
+    Mount,
+
     /// For testing
     Test,
 }
@@ -138,6 +140,12 @@ pub fn run() -> Result<()> {
     #[cfg(not(target_os = "android"))]
     env_logger::init();
 
+    // the kernel executes su with argv[0] = "su" and replace it with us
+    let arg0 = std::env::args().next().unwrap_or_default();
+    if arg0 == "su" || arg0 == "/system/bin/su" {
+        return crate::ksu::root_shell();
+    }
+
     let cli = Args::parse();
 
     log::info!("command: {:?}", cli.command);
@@ -181,12 +189,13 @@ pub fn run() -> Result<()> {
                 Ok(())
             }
             Debug::Su => crate::ksu::grant_root(),
+            Debug::Mount => event::mount_systemlessly(defs::MODULE_DIR),
             Debug::Test => todo!(),
         },
     };
 
     if let Err(e) = &result {
-        log::error!("Error: {}", e);
+        log::error!("Error: {:?}", e);
     }
     result
 }

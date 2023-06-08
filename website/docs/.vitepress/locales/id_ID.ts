@@ -23,7 +23,7 @@ export default defineConfig({
 
     footer: {
         message: 'Rilis Dibawah Lisensi GPL3.',
-        copyright: 'Copyright © 2022-present KernelSU Developers'
+        copyright: 'Copyright © 2022-Sekarang pengembang KernelSU '
     },
 
     editLink: {
@@ -50,6 +50,8 @@ function sidebarGuide() {
           { text: 'Bagaimana cara buildnya?', link: '/id_ID/guide/how-to-build' },
           { text: 'Integrasi untuk perangkat non-GKI', link: '/id_ID/guide/how-to-integrate-for-non-gki'},
           { text: 'Perangkat yang didukung secara tidak resmi', link: '/id_ID/guide/unofficially-support-devices.md' },
+          { text: 'Petunjuk module', link: '/id_ID/guide/module.md' },
+          { text: 'Antisipasi dari bootloop', link: '/id_ID/guide/rescue-from-bootloop.md' },
           { text: 'FAQ', link: '/id_ID/guide/faq' },
         ]
     }
