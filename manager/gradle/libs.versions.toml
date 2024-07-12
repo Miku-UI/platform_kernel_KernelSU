@@ -1,23 +1,22 @@
 [versions]
-agp = "8.3.1"
-kotlin = "1.9.22"
-ksp = "1.9.23-1.0.19"
-compose-compiler = "1.5.10"
-compose-bom = "2024.02.02"
-lifecycle = "2.7.0"
+agp = "8.4.1"
+kotlin = "2.0.0"
+ksp = "2.0.0-1.0.21"
+compose-bom = "2024.05.00"
+lifecycle = "2.8.0"
 accompanist = "0.34.0"
 navigation = "2.7.7"
-activity-compose = "1.8.2"
-kotlinx-coroutines = "1.8.0"
+activity-compose = "1.9.0"
+kotlinx-coroutines = "1.8.1"
 coil-compose = "2.6.0"
 compose-destination = "1.10.2"
 sheets-compose-dialogs = "1.3.0"
 markdown = "4.6.2"
-webkit = "1.10.0"
+webkit = "1.11.0"
 appiconloader-coil = "1.5.0"
 parcelablelist = "2.0.1"
 libsu = "5.2.2"
-apksign = "1.1"
+apksign = "1.4"
 cmaker = "1.2"
 
 [plugins]
@@ -25,6 +24,7 @@ agp-app = { id = "com.android.application", version.ref = "agp" }
 agp-lib = { id = "com.android.library", version.ref = "agp" }
 
 kotlin = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 

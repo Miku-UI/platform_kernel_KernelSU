@@ -3,6 +3,7 @@ import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 plugins {
     alias(libs.plugins.agp.app)
     alias(libs.plugins.kotlin)
+    alias(libs.plugins.compose.compiler)
     alias(libs.plugins.ksp)
     alias(libs.plugins.lsplugin.apksign)
     id("kotlin-parcelize")
@@ -36,11 +37,7 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.compose.compiler.get()
+        jvmTarget = "21"
     }
 
     packaging {
