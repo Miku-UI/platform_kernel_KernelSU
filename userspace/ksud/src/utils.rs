@@ -1,18 +1,19 @@
-use anyhow::{bail, Context, Error, Ok, Result};
+use anyhow::{Context, Error, Ok, Result, bail};
 use std::{
-    fs::{create_dir_all, remove_file, write, File, OpenOptions},
+    fs::{self, File, OpenOptions, create_dir_all, remove_file, write},
     io::{
         ErrorKind::{AlreadyExists, NotFound},
         Write,
     },
     path::Path,
     process::Command,
+    sync::OnceLock,
 };
 
 use crate::{assets, boot_patch, defs, ksucalls, module, restorecon};
 use std::fs::metadata;
 #[allow(unused_imports)]
-use std::fs::{set_permissions, Permissions};
+use std::fs::{Permissions, set_permissions};
 #[cfg(unix)]
 use std::os::unix::prelude::PermissionsExt;
 
@@ -21,7 +22,7 @@ use std::path::PathBuf;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use rustix::{
     process,
-    thread::{move_into_link_name_space, LinkNameSpaceType},
+    thread::{LinkNameSpaceType, move_into_link_name_space},
 };
 
 pub fn ensure_clean_dir(dir: impl AsRef<Path>) -> Result<()> {
@@ -126,7 +127,7 @@ pub fn get_zip_uncompressed_size(zip_path: &str) -> Result<u64> {
 pub fn switch_mnt_ns(pid: i32) -> Result<()> {
     use rustix::{
         fd::AsFd,
-        fs::{open, Mode, OFlags},
+        fs::{Mode, OFlags, open},
     };
     let path = format!("/proc/{pid}/ns/mnt");
     let fd = open(path, OFlags::RDONLY, Mode::from_raw_mode(0))?;
@@ -178,14 +179,66 @@ pub fn has_magisk() -> bool {
     which::which("magisk").is_ok()
 }
 
+fn is_ok_empty(dir: &str) -> bool {
+    use std::result::Result::{Err, Ok};
+
+    match fs::read_dir(dir) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(_) => false,
+    }
+}
+
+fn find_temp_path() -> String {
+    use std::result::Result::{Err, Ok};
+
+    if is_ok_empty(defs::TEMP_DIR) {
+        return defs::TEMP_DIR.to_string();
+    }
+
+    // Try to create a random directory in /dev/
+    let r = tempfile::tempdir_in("/dev/");
+    match r {
+        Ok(tmp_dir) => {
+            if let Some(path) = tmp_dir.into_path().to_str() {
+                return path.to_string();
+            }
+        }
+        Err(_e) => {}
+    }
+
+    let dirs = [
+        defs::TEMP_DIR,
+        "/patch_hw",
+        "/oem",
+        "/root",
+        defs::TEMP_DIR_LEGACY,
+    ];
+
+    // find empty directory
+    for dir in dirs {
+        if is_ok_empty(dir) {
+            return dir.to_string();
+        }
+    }
+
+    // Fallback to non-empty directory
+    for dir in dirs {
+        if metadata(dir).is_ok() {
+            return dir.to_string();
+        }
+    }
+
+    "".to_string()
+}
+
 pub fn get_tmp_path() -> &'static str {
-    if metadata(defs::TEMP_DIR_LEGACY).is_ok() {
-        return defs::TEMP_DIR_LEGACY;
-    }
-    if metadata(defs::TEMP_DIR).is_ok() {
-        return defs::TEMP_DIR;
-    }
-    ""
+    static CHOSEN_TMP_PATH: OnceLock<String> = OnceLock::new();
+
+    CHOSEN_TMP_PATH.get_or_init(|| {
+        let r = find_temp_path();
+        log::info!("chosen tmp path: {}", r);
+        r
+    })
 }
 
 pub fn get_work_dir() -> String {

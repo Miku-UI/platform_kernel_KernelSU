@@ -19,14 +19,25 @@ ifneq ($(shell grep -q "int path_umount" $(srctree)/fs/namespace.c; echo $$?),0)
 $(error -- Backporting path_umount is mandatory !! Read: https://kernelsu.org/guide/how-to-integrate-for-non-gki.html#how-to-backport-path-umount)
 endif
 
+# https://github.com/tiann/KernelSU/pull/2102/files#diff-3a325663233178293ee38b8161f3be511a466af7e0156b9d03d5aed0497564bfR19
+IS_GKI := $(strip $(shell \
+    if [ "$(VERSION)" -ge "5" -a "$(PATCHLEVEL)" -ge "10" ]; then \
+      echo TRUE; \
+    else \
+      echo FALSE; \
+    fi \
+  ))
+
+ifeq ($(IS_GKI),TRUE)
+$(info -- KernelSU: Kernel version is GKI.)
 # GKI manual hook checks
 # https://github.com/Pzqqt/android_kernel_xiaomi_marble/commit/5b8596b5604bcd0e6e12697a01136a0bb9eb0257
-ifeq ($(CONFIG_KSU_MANUAL_HOOK),y)
-ifeq ($(CONFIG_KSU),m)
+ifeq ($(strip $(CONFIG_KSU_MANUAL_HOOK)),y)
+$(info -- KernelSU: Hooks with Manual hook!)
+ifeq ($(strip $(CONFIG_KSU)),m)
 $(error CONFIG_KSU_MANUAL_HOOK cannot be enabled when compiling KernelSU as LKM!)
 endif
 else
-ifeq ($(CONFIG_KPROBES),y)
 ccflags-y += -DKSU_HOOK_WITH_KPROBES
 endif
 endif
@@ -49,14 +60,13 @@ endif
 
 # This feature was introduced in linux 5.0-rc1
 ifeq ($(shell grep -q "get_cred_rcu" $(srctree)/include/linux/cred.h; echo $$?),0)
-ccflags-y += -DKSU_COMPAT_GET_CRED_RCU
+ccflags-y += -DKSU_COMPAT_HAS_GET_CRED_RCU
 else
-# https://github.com/gregkh/linux/commit/123e44b9a49a42ff5313ec65256f1540d7c52fa0
-ifeq ($(shell grep -q "atomic_long_inc" $(srctree)/include/linux/cred.h; echo $$?),0)
-$(info -- KernelSU compat: atomic_long_t detected.)
+ifeq ($(shell grep -q "atomic_long_t\s\+\usage" $(srctree)/include/linux/cred.h; echo $$?),0)
 ccflags-y += -DKSU_COMPAT_ATOMIC_LONG
-else
-$(info -- KernelSU compat: atomic_t detected.)
+endif
+ifeq ($(shell grep -q "int\s\+\non_rcu" $(srctree)/include/linux/cred.h; echo $$?),0)
+ccflags-y += -DKSU_COMPAT_HAS_NONCONST_CRED
 endif
 endif
 
@@ -89,8 +99,8 @@ ccflags-y += -DKSU_MANAGER_PACKAGE=\"$(KSU_MANAGER_PACKAGE)\"
 $(info -- KernelSU Manager package name: $(KSU_MANAGER_PACKAGE))
 endif
 
-$(info -- Official KernelSU Manager signature size: $(KSU_EXPECTED_SIZE))
-$(info -- Official KernelSU Manager signature hash: $(KSU_EXPECTED_HASH))
+$(info -- KernelSU Manager signature size: $(KSU_EXPECTED_SIZE))
+$(info -- KernelSU Manager signature hash: $(KSU_EXPECTED_HASH))
 $(info -- Supported Unofficial Manager: rsuntk (Non-GKI), 5ec1cff (GKI)) 
 
 ccflags-y += -DEXPECTED_SIZE=$(KSU_EXPECTED_SIZE)

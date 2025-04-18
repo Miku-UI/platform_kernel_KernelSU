@@ -1,17 +1,17 @@
-# KernelSU
-
 <img src="https://kernelsu.org/logo.png" style="width: 96px;" alt="logo">
 
-A Kernel-based root solution for Android devices.
+# KernelSU
+
+### A Kernel-based root solution for Android devices.
 
 > [!NOTE]
 > Official KernelSU support for Non-GKI kernels has been ended.
->
+> 
 > This is unofficial forks, all rights reserved to [@tiann](https://github.com/tiann)
 
-[![Latest release](https://img.shields.io/github/v/release/rsuntk/KernelSU?label=Release&logo=github)](https://github.com/tiann/KernelSU/releases/latest)
-[![Weblate](https://img.shields.io/badge/Localization-Weblate-teal?logo=weblate)](https://hosted.weblate.org/engage/kernelsu)
-[![Channel](https://img.shields.io/badge/Follow-Telegram-blue.svg?logo=telegram)](https://t.me/KernelSU)
+[![Latest release](https://img.shields.io/github/v/release/rsuntk/KernelSU?label=Release&logo=github)](https://github.com/rsuntk/KernelSU/releases/latest)
+[![Latest LKM release](https://img.shields.io/github/v/release/rsuntk/ksu-lkm?label=Release&logo=github)](https://github.com/rsuntk/ksu-lkm/releases/latest)
+[![Channel](https://img.shields.io/badge/Follow-Telegram-blue.svg?logo=telegram)](https://t.me/rsukrnlsu)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-orange.svg?logo=gnu)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
 [![GitHub License](https://img.shields.io/github/license/tiann/KernelSU?logo=gnu)](/LICENSE)
 
@@ -22,8 +22,15 @@ curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.s
 
 ## Hook method
 
-1. `KPROBES` hook
-2. Manual hook (For GKI: Use `#ifdef CONFIG_KSU_MANUAL_HOOK` instead of `#ifdef CONFIG_KSU` for guard certain kernelsu hook)
+1. **KPROBES hook:**
+    - Only support GKI (5.10 - 6.x) Kernels in this fork. All non-GKI kernels must use manual hook.
+    - Used for Loadable Kernel Module (LKM)
+    - Default hook method on GKI kernels.
+    - Need `CONFIG_KPROBES=y`
+2. **Manual hook:**
+    - For GKI (5.10 - 6.x) Kernels, add `CONFIG_KSU_MANUAL_HOOK=y` to kernel defconfig make sure to use `#ifdef CONFIG_KSU_MANUAL_HOOK` instead of `#ifdef CONFIG_KSU` to guard KernelSU hook.
+    - Standard KernelSU hook: https://kernelsu.org/guide/how-to-integrate-for-non-gki.html#manually-modify-the-kernel-source
+    - backslashxx's syscall manual hook: https://github.com/backslashxx/KernelSU/issues/5
 
 ## Features
 
@@ -46,13 +53,9 @@ Currently, only `arm64-v8a` are supported.
 - [How to build?](https://kernelsu.org/guide/how-to-build.html)
 - [Official Website](https://kernelsu.org/)
 
-## Translation
-
-To help translate KernelSU or improve existing translations, please use [Weblate](https://hosted.weblate.org/engage/kernelsu/). PR of Manager's translation is no longer accepted, because it will conflict with Weblate.
-
 ## Discussion
 
-- Telegram: [@KernelSU](https://t.me/KernelSU)
+- Official KernelSU Telegram: [@KernelSU](https://t.me/KernelSU)
 
 ## Security
 

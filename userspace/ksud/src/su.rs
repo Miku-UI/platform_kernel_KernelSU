@@ -14,7 +14,7 @@ use crate::{
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use rustix::{
     process::getuid,
-    thread::{set_thread_res_gid, set_thread_res_uid, Gid, Uid},
+    thread::{Gid, Uid, set_thread_res_gid, set_thread_res_uid},
 };
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -104,10 +104,11 @@ pub fn root_shell() -> Result<()> {
         "preserve-environment",
         "preserve the entire environment",
     );
-    opts.optflag(
+    opts.optopt(
         "s",
         "shell",
         "use SHELL instead of the default /system/bin/sh",
+        "SHELL",
     );
     opts.optflag("v", "version", "display version number and exit");
     opts.optflag("V", "", "display version code and exit");
@@ -278,6 +279,6 @@ fn add_path_to_env(path: &str) -> Result<()> {
     let new_path = PathBuf::from(path.trim_end_matches('/'));
     paths.push(new_path);
     let new_path_env = env::join_paths(paths)?;
-    env::set_var("PATH", new_path_env);
+    unsafe { env::set_var("PATH", new_path_env) };
     Ok(())
 }

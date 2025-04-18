@@ -10,13 +10,6 @@
 #include "klog.h" // IWYU pragma: keep
 #include "kernel_compat.h" // Add check Huawei Device
 
-// Checks for UH, KDP and RKP
-#ifdef SAMSUNG_UH_DRIVER_EXIST
-#if defined(CONFIG_UH) || defined(CONFIG_KDP) || defined(CONFIG_RKP)
-#error "CONFIG_UH, CONFIG_KDP and CONFIG_RKP is enabled! Please disable or remove it before compile a kernel with KernelSU!"
-#endif
-#endif
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) ||	\
 	defined(CONFIG_IS_HW_HISI) ||	\
 	defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)

@@ -3,34 +3,19 @@ use crate::module::{handle_updated_modules, prune_modules};
 use crate::{assets, defs, ksucalls, restorecon, utils};
 use anyhow::{Context, Result};
 use log::{info, warn};
-use rustix::{fd::AsFd, fs::MountFlags, fs::CWD, mount::*};
+use rustix::fs::{MountFlags, mount};
 use std::path::Path;
 
 // https://github.com/tiann/KernelSU/blob/v0.9.5/userspace/ksud/src/mount.rs#L158
 #[cfg(any(target_os = "linux", target_os = "android"))]
 fn mount_tmpfs(dest: impl AsRef<Path>) -> Result<()> {
-    info!("mount tmpfs on {}", dest.as_ref().display());
-    if let Result::Ok(fs) = fsopen("tmpfs", FsOpenFlags::FSOPEN_CLOEXEC) {
-        let fs = fs.as_fd();
-        fsconfig_set_string(fs, "source", KSU_MOUNT_SOURCE)?;
-        fsconfig_create(fs)?;
-        let mount = fsmount(fs, FsMountFlags::FSMOUNT_CLOEXEC, MountAttrFlags::empty())?;
-        move_mount(
-            mount.as_fd(),
-            "",
-            CWD,
-            dest.as_ref(),
-            MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
-        )?;
-    } else {
-        mount(
-            KSU_MOUNT_SOURCE,
-            dest.as_ref(),
-            "tmpfs",
-            MountFlags::empty(),
-            "",
-        )?;
-    }
+    mount(
+        KSU_MOUNT_SOURCE,
+        dest.as_ref(),
+        "tmpfs",
+        MountFlags::empty(),
+        "",
+    )?;
     Ok(())
 }
 

@@ -43,6 +43,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.dropUnlessResumed
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
@@ -53,6 +54,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.KeyEventBlocker
+import me.weishu.kernelsu.ui.util.FlashResult
 import me.weishu.kernelsu.ui.util.LkmSelection
 import me.weishu.kernelsu.ui.util.LocalSnackbarHost
 import me.weishu.kernelsu.ui.util.flashModule
@@ -65,23 +67,40 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * @author weishu
+ * @date 2023/1/1.
+ */
+
 enum class FlashingStatus {
     FLASHING,
     SUCCESS,
     FAILED
 }
 
-/**
- * @author weishu
- * @date 2023/1/1.
- */
+// Lets you flash modules sequentially when mutiple zipUris are selected
+fun flashModulesSequentially(
+    uris: List<Uri>,
+    onStdout: (String) -> Unit,
+    onStderr: (String) -> Unit
+): FlashResult {
+    for (uri in uris) {
+        flashModule(uri, onStdout, onStderr).apply {
+            if (code != 0) {
+                return FlashResult(code, err, showReboot)
+            }
+        }
+    }
+    return FlashResult(0, "", true)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Destination<RootGraph>
 fun FlashScreen(navigator: DestinationsNavigator, flashIt: FlashIt) {
 
     var text by rememberSaveable { mutableStateOf("") }
-    var tempText : String
+    var tempText: String
     val logContent = rememberSaveable { StringBuilder() }
     var showFloatAction by rememberSaveable { mutableStateOf(false) }
 
@@ -98,16 +117,7 @@ fun FlashScreen(navigator: DestinationsNavigator, flashIt: FlashIt) {
             return@LaunchedEffect
         }
         withContext(Dispatchers.IO) {
-            flashIt(flashIt, onFinish = { showReboot, code ->
-                if (code != 0) {
-                    text += "Error: exit code = $code.\nPlease save and check the log.\n"
-                }
-                if (showReboot) {
-                    text += "\n\n\n"
-                    showFloatAction = true
-                }
-                flashing = if (code == 0) FlashingStatus.SUCCESS else FlashingStatus.FAILED
-            }, onStdout = {
+            flashIt(flashIt, onStdout = {
                 tempText = "$it\n"
                 if (tempText.startsWith("[H[J")) { // clear command
                     text = tempText.substring(6)
@@ -117,7 +127,16 @@ fun FlashScreen(navigator: DestinationsNavigator, flashIt: FlashIt) {
                 logContent.append(it).append("\n")
             }, onStderr = {
                 logContent.append(it).append("\n")
-            })
+            }).apply {
+                if (code != 0) {
+                    text += "Error code: $code.\n $err Please save and check the log.\n"
+                }
+                if (showReboot) {
+                    text += "\n\n\n"
+                    showFloatAction = true
+                }
+                flashing = if (code == 0) FlashingStatus.SUCCESS else FlashingStatus.FAILED
+            }
         }
     }
 
@@ -125,7 +144,7 @@ fun FlashScreen(navigator: DestinationsNavigator, flashIt: FlashIt) {
         topBar = {
             TopBar(
                 flashing,
-                onBack = {
+                onBack = dropUnlessResumed {
                     navigator.popBackStack()
                 },
                 onSave = {
@@ -193,31 +212,36 @@ sealed class FlashIt : Parcelable {
 
     data class FlashModule(val uri: Uri) : FlashIt()
 
+    data class FlashModules(val uris: List<Uri>) : FlashIt()
+
     data object FlashRestore : FlashIt()
 
     data object FlashUninstall : FlashIt()
 }
 
 fun flashIt(
-    flashIt: FlashIt, onFinish: (Boolean, Int) -> Unit,
+    flashIt: FlashIt,
     onStdout: (String) -> Unit,
     onStderr: (String) -> Unit
-) {
-    when (flashIt) {
+): FlashResult {
+    return when (flashIt) {
         is FlashIt.FlashBoot -> installBoot(
             flashIt.boot,
             flashIt.lkm,
             flashIt.ota,
-            onFinish,
             onStdout,
             onStderr
         )
 
-        is FlashIt.FlashModule -> flashModule(flashIt.uri, onFinish, onStdout, onStderr)
+        is FlashIt.FlashModule -> flashModule(flashIt.uri, onStdout, onStderr)
 
-        FlashIt.FlashRestore -> restoreBoot(onFinish, onStdout, onStderr)
+        is FlashIt.FlashModules -> {
+            flashModulesSequentially(flashIt.uris, onStdout, onStderr)
+        }
 
-        FlashIt.FlashUninstall -> uninstallPermanently(onFinish, onStdout, onStderr)
+        FlashIt.FlashRestore -> restoreBoot(onStdout, onStderr)
+
+        FlashIt.FlashUninstall -> uninstallPermanently(onStdout, onStderr)
     }
 }
 
